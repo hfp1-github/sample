@@ -1,0 +1,136 @@
+import tkinter as tk
+import tkinter.ttk as ttk
+import util as ut
+
+stickyall = (tk.W, tk.E, tk.N, tk.S)
+stickyY = (tk.N, tk.S)
+stickyX = (tk.W, tk.E)
+
+class Application(tk.Frame):
+    def __init__(self, master=None):
+        super().__init__(master)
+        self.finds = None # 検索結果のバッファ
+        self.find_indexces_list = None # ヒットした行のインデックスのバッファ
+        self.database_paths = ut.get_db_paths() # データベースのパス
+        self.db = ut.Textdb(self.database_paths)
+        self.pack(side="top", anchor=tk.NW, expand=True, fill=tk.BOTH)
+        # ---ウィジェットの引き伸ばし設定
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure(1, weight=1)
+        self.create_widgets()
+        self.display_all()
+
+    def reload_database(self):
+        self.db = ut.Textdb(self.database_paths)
+        self.search_main()
+
+    def display_all(self):
+        # 全検索結果を適用
+        self.update_listbox(self.lbox_string, list(self.db.db.values()))
+        self.update_textbox(self.tbox, self.db.db[0])
+
+    def create_widgets(self):
+        # ------Entry関係
+        # ---親Frame1
+        self.fr1 = tk.Frame(self, borderwidth=1)  # フレーム
+        # self.fr1 = tk.Frame(self, borderwidth=1, relief=tk.GROOVE)  # フレーム
+        self.fr1.grid(row=0, column=0, padx=5, pady=5, sticky=stickyall)
+        self.fr1.columnconfigure(0, weight=1)
+        self.fr1.bind('<Key>', self.key)
+        # ---Entry
+        self.entry_var = tk.StringVar()
+        self.entry_var.trace("w", lambda name, index, mode, sv=self.entry_var: self.search_main())
+        self.en = tk.Entry(self.fr1, textvariable=self.entry_var)
+        self.en.grid(row=0, column=0, padx=5, pady=5, sticky=(tk.W, tk.E))  # 表示メソッド
+        self.en.bind('<KeyPress-F5>', lambda e: self.reload_database())
+        self.en.focus_set()
+
+        # ------親Frame2
+        self.fr2 = tk.Frame(self, borderwidth=1)  # フレーム
+        # self.fr2 = tk.Frame(self, borderwidth=1, relief=tk.GROOVE)  # フレーム
+        self.fr2.grid(row=1, column=0, padx=5, pady=5, sticky=stickyall)
+        # ---ウィジェットの引き伸ばし設定(0行目無効化, # 0, 1列目を均等引き延ばし)
+        self.fr2.rowconfigure(0, weight=1)
+        self.fr2.columnconfigure(0, weight=1, uniform='group1') 
+        self.fr2.columnconfigure(2, weight=1, uniform='group1')
+
+        # ---リストボックス
+        self.lbox_string = tk.StringVar()  # 文字列なのでStringVar()でオブジェクトを生成
+        self.lbox = tk.Listbox(self.fr2, listvariable=self.lbox_string)
+        self.lbox.grid(row=0, column=0, padx=0, pady=5, sticky=stickyall)  # リストボックス配置
+        self.lbox.bind('<<ListboxSelect>>', lambda e :self.selection_print_to_TextFrame(self.lbox, self.tbox)) # 項目が選択されたときの処理
+
+        # スクロールバーの生成・配置
+        self.scbar = tk.Scrollbar(self.fr2, orient=tk.VERTICAL, command=self.lbox.yview)
+        self.scbar.grid(row=0, column=1, padx=0, pady=5, sticky=stickyY)
+        self.lbox["yscrollcommand"] = self.scbar.set
+
+        # テキストボックス
+        self.tbox = tk.Text(self.fr2)  # fr内に配置
+        self.tbox.tag_configure("highlight", background="yellow", foreground="black") # 強調表示タグ生成
+        self.tbox.grid(row=0, column=2, padx=5, pady=5,sticky=stickyall)
+
+
+        # # ボタンの生成・配置
+        # button_page = ttk.Button(root, text="+", width=4)
+        # button_page.bind("<1>", lambda event: self.lbox.insert(tk.END, "新規"))
+        # button_page.pack()
+
+        # # ボタン
+        # self.bt = tk.Button(self)
+        # self.bt["text"] = "ボタン"
+        # self.bt["command"] = self.buttontest
+        # self.bt.pack(side="bottom")
+
+
+    def search_main(self):
+        # dbからentryのtextを検索してリストボックスに入れる
+        query = self.en.get()
+        if query == '':
+            self.display_all()
+            return
+
+        self.finds = self.db.search2(self.en.get(), True)
+        self.find_indexces_list = list(self.finds.values())
+        self.blocklist = self.db[self.finds.keys()]
+        
+        self.update_listbox(self.lbox_string, self.blocklist)
+
+        if len(self.blocklist) > 0:
+            self.update_textbox(self.tbox, self.blocklist[0], self.find_indexces_list[0])
+        else:
+            self.tbox.delete('1.0', 'end')
+
+    def selection_print_to_TextFrame(self, lb: tk.Listbox, tbox: tk.Text):
+        # リストボックスで選択したテキスト取得
+        try:
+            selected_idx = lb.curselection()[0]
+            words = lb.get(selected_idx)
+            if self.find_indexces_list:
+                self.update_textbox(tbox, words, self.find_indexces_list[selected_idx])
+            else:
+                self.update_textbox(tbox, words)
+        except:
+            pass
+
+    def update_textbox(self, tbox:tk.Text, words, find_indexces=None):
+        # tBoxをにwordsで上書き
+        tbox.delete('1.0', 'end')
+        [tbox.insert(tk.INSERT, word) for word in words]
+        if find_indexces:
+            for i in find_indexces:
+                tbox.tag_add("highlight", '{}.0'.format(i+1), "{}.0+1lines".format(i+1))
+
+    def update_listbox(self, lbox:tk.Listbox, values):
+        lbox.set(values)
+
+    def key(self, event):
+        print("pressed", repr(event.char))
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = Application(root)
+    root.columnconfigure(0, weight=1)
+    root.rowconfigure(0, weight=1)
+    root.title('search')
+    root.mainloop()
