@@ -1,6 +1,7 @@
 import os
 import itertools
 import glob
+import re
 
 debugfilepaths = glob.glob("dbdir/*.txt")
 
@@ -14,6 +15,8 @@ class Textdb:
         # 検索は小文字データベースから行う(大文字小文字の区別が出来ないため)
         self.__db , self.path_idx_map = self.make_db2(filepaths)
         self.db_small = {n:[line.lower() for line in block] for n, block in self.db.items()}
+        self.delimiter = '\n'  # 文字×行数
+        self.delimiter_num = 3  # 文字×行数
     
     # 単一インデックスかiterableインデックスに対応
     def __getitem__(self, indexes):
@@ -26,6 +29,27 @@ class Textdb:
 
         return ret
 
+    def append_block(self, filepath, lines):
+        ''' filepathにlinesを付加する。 '''
+        if not os.path.exists(filepath):
+            print('{}is not found.'.format(filepath))
+            return
+
+        if type(lines) != list: # 改行でsplitしたリストに変換
+            lines = re.findall('.*\n', lines)
+
+        # ファイルの末尾にデリミタが存在するか確認。無ければ追加する。
+        with open(filepath, 'a+', encoding='utf-8')as f: # 読み書きモード
+            f.seek(0) # ファイルポインタをファイル先頭へ
+            lastlines = f.readlines()[-self.delimiter_num:]
+            for n, line in enumerate(reversed(lastlines)):
+                if line != self.delimiter:
+                    if not ('\n' in lastlines[-1]): # 最終行に改行が無ければ追加
+                        lines.insert(0, '\n')
+                    lines.insert(0, self.delimiter * (self.delimiter_num-n))
+                    break
+            f.writelines(lines)
+
     def make_db(self, filepaths):
         if type(filepaths) != list:
             filepaths = [filepaths]
@@ -35,8 +59,8 @@ class Textdb:
             改行3つで区切った文字列のリストを生成
         """
 
-        delimiter = "\n"
-        delim_threas = 3  # splitする\nが出てきた回数
+        delimiter = self.delimiter
+        delim_threas = self.delimiter_num  # splitする\nが出てきた回数
         lines = []
         index = 0
         # ---dbリストを全て読み込み、結合
@@ -135,4 +159,5 @@ class Textdb:
 if __name__ == "__main__":
     db = Textdb(debugfilepaths)
     a = db.search2("git")
+    db.append_block('huge.txt', ['hoge\n', 'huga'])
     print(a)

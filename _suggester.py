@@ -11,17 +11,48 @@ class Application(tk.Frame):
         super().__init__(master)
         self.finds = None # 検索結果のバッファ
         self.find_indexces_list = None # ヒットした行のインデックスのバッファ
-        self.database_paths = ut.get_db_paths() # データベースのパス
-        self.db = ut.Textdb(self.database_paths)
+        self.filepaths = ut.get_db_paths() # データベースのパス
+        self.last_update_path = self.filepaths[0] # 最後に更新したデータベースのパス
+        self.db = ut.Textdb(self.filepaths) # データベース作成
         self.pack(side="top", anchor=tk.NW, expand=True, fill=tk.BOTH)
         # ---ウィジェットの引き伸ばし設定
         self.columnconfigure(0, weight=1)
-        self.rowconfigure(1, weight=1)
+        self.rowconfigure(2, weight=1)
         self.create_widgets()
         self.display_all()
 
+    # ブロックを追加するダイアログを開く
+    def openDialog(self):
+
+        self.dialog = tk.Toplevel(self) # サブウィンドウ作成
+        self.dialog.title("データ追加")
+        self.dialog.grab_set()
+        self.dialog.columnconfigure(0, weight=1)
+        self.dialog.rowconfigure(1, weight=1)
+
+        # ---combobox
+        combo_files = ttk.Combobox(self.dialog, state='readonly')
+        combo_files['values'] = self.filepaths
+        combo_files.current(self.filepaths.index(self.last_update_path)) # 最後に更新したパスをデフォルトにする
+        combo_files.grid(row=0, column=0, padx=5, pady=5, sticky=(tk.W, tk.E))  # 表示メソッド
+
+        # テキストボックス
+        tbox_append = tk.Text(self.dialog)  # fr内に配置
+        tbox_append.grid(row=1, column=0, padx=5, pady=5,sticky=stickyall)
+        tbox_append.focus_set()
+
+        # closeする前にダイアログに入力された値を反映する
+        def closeDialog():
+            self.last_update_path = combo_files.get() # 最終更新ファイルパスを更新
+            self.db.append_block(self.last_update_path, tbox_append.get('1.0', 'end')) # 書き込み
+            self.dialog.destroy()
+            self.reload_database()
+
+        tbox_append.bind('<Control-KeyPress-Return>', lambda e: closeDialog())
+
+
     def reload_database(self):
-        self.db = ut.Textdb(self.database_paths)
+        self.db = ut.Textdb(self.filepaths)
         self.search_main()
 
     def display_all(self):
@@ -32,23 +63,23 @@ class Application(tk.Frame):
     def create_widgets(self):
         # ------Entry関係
         # ---親Frame1
-        self.fr1 = tk.Frame(self, borderwidth=1)  # フレーム
-        # self.fr1 = tk.Frame(self, borderwidth=1, relief=tk.GROOVE)  # フレーム
-        self.fr1.grid(row=0, column=0, padx=5, pady=5, sticky=stickyall)
+        self.fr1 = tk.Frame(self, borderwidth=1, relief=tk.GROOVE)  # フレーム
+        self.fr1.grid(row=1, column=0, padx=5, pady=0, sticky=stickyall)
         self.fr1.columnconfigure(0, weight=1)
         self.fr1.bind('<Key>', self.key)
+
         # ---Entry
         self.entry_var = tk.StringVar()
         self.entry_var.trace("w", lambda name, index, mode, sv=self.entry_var: self.search_main())
         self.en = tk.Entry(self.fr1, textvariable=self.entry_var)
         self.en.grid(row=0, column=0, padx=5, pady=5, sticky=(tk.W, tk.E))  # 表示メソッド
         self.en.bind('<KeyPress-F5>', lambda e: self.reload_database())
+        self.en.bind('<Control-KeyPress-d>', lambda e: self.openDialog())
         self.en.focus_set()
 
         # ------親Frame2
-        self.fr2 = tk.Frame(self, borderwidth=1)  # フレーム
-        # self.fr2 = tk.Frame(self, borderwidth=1, relief=tk.GROOVE)  # フレーム
-        self.fr2.grid(row=1, column=0, padx=5, pady=5, sticky=stickyall)
+        self.fr2 = tk.Frame(self, borderwidth=1, relief=tk.GROOVE)  # フレーム
+        self.fr2.grid(row=2, column=0, padx=5, pady=5, sticky=stickyall)
         # ---ウィジェットの引き伸ばし設定(0行目無効化, # 0, 1列目を均等引き延ばし)
         self.fr2.rowconfigure(0, weight=1)
         self.fr2.columnconfigure(0, weight=1, uniform='group1') 
@@ -86,7 +117,8 @@ class Application(tk.Frame):
     def search_main(self):
         # dbからentryのtextを検索してリストボックスに入れる
         query = self.en.get()
-        if query == '':
+        if query == '': # 空になった時の処理
+            self.find_indexces_list = None
             self.display_all()
             return
 
@@ -103,15 +135,15 @@ class Application(tk.Frame):
 
     def selection_print_to_TextFrame(self, lb: tk.Listbox, tbox: tk.Text):
         # リストボックスで選択したテキスト取得
-        try:
-            selected_idx = lb.curselection()[0]
-            words = lb.get(selected_idx)
-            if self.find_indexces_list:
-                self.update_textbox(tbox, words, self.find_indexces_list[selected_idx])
-            else:
-                self.update_textbox(tbox, words)
-        except:
-            pass
+        selected_idx = lb.curselection()
+        if len(selected_idx) == 0:
+            return
+        selected_idx = selected_idx[0]
+        words = lb.get(selected_idx)
+        if self.find_indexces_list:
+            self.update_textbox(tbox, words, self.find_indexces_list[selected_idx])
+        else:
+            self.update_textbox(tbox, words)
 
     def update_textbox(self, tbox:tk.Text, words, find_indexces=None):
         # tBoxをにwordsで上書き
